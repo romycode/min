@@ -7,6 +7,7 @@ use crate::term::Term;
 
 mod buffer;
 mod term;
+mod cursor;
 
 fn main() {
     let stdout = stdout();
