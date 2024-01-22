@@ -105,6 +105,7 @@ impl Buffer {
         self.insert_at(self.cursor, c)
     }
     pub fn remove_at(&mut self, pos: usize) {
+        if self.cursor == 0 { return; }
         self.sync_line_with_cursor(pos);
         match self.content[self.cursor] {
             '\n' => {
@@ -112,17 +113,41 @@ impl Buffer {
                 self.lines[self.line].end -= 1;
                 if self.line + 1 < self.lines.len() {
                     self.lines[self.line].end = self.lines[self.line + 1].end - 1;
+                    if self.content.len() < self.lines[self.line + 1].end {
+                        self.lines[self.line].end = self.lines[self.line + 1].end - 2;
+                    }
                     self.lines.remove(self.line + 1);
                 }
             }
             _ => {
                 self.content.remove(self.cursor);
-                self.lines[self.line].end -= 1;
+                if self.lines[self.line].end != 0 {
+                    self.lines[self.line].end -= 1;
+                }
             }
         }
     }
     pub fn remove(&mut self) {
+        if self.cursor == 0 { return; }
         self.remove_at(self.cursor - 1)
+    }
+    pub fn content(&self) -> String {
+        if self.content.len() == 0 {
+            return String::new();
+        }
+
+        let mut content = String::new();
+        for line in &self.lines {
+            if line.start == self.content.len() {
+                continue;
+            }
+            let mut line_content = self.content[line.start..=line.end].iter().collect::<String>();
+            if line_content.ends_with('\n') {
+                line_content.insert(line_content.len() - 1, '\r');
+            }
+            content.push_str(&line_content)
+        }
+        content
     }
     fn sync_line_with_cursor(&mut self, pos: usize) {
         self.cursor = pos;
@@ -253,5 +278,11 @@ mod test {
             "buffer [ cursor: 0, line: 0, content: 'lorem\nipsum', lines: '[(0, 5), (6, 10)]']",
             buffer.to_string()
         );
+    }
+
+    #[test]
+    fn test_should_return_correct_content() {
+        let buffer = Buffer::from_str("lorem\nipsum\n");
+        assert_eq!("lorem\r\nipsum\r\n", buffer.content());
     }
 }
