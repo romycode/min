@@ -31,13 +31,17 @@ impl LineRange {
 pub struct Buffer {
     content: Vec<char>,
     lines: Vec<LineRange>,
+    cursor: usize,
+    line: usize,
 }
 
 impl Display for Buffer {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "buffer [ content: '{}', lines: '{:?}']",
+            "buffer [ cursor: {}, line: {}, content: '{}', lines: '{:?}']",
+            self.cursor,
+            self.line,
             self.content.iter().collect::<String>(),
             self.lines,
         )
@@ -54,23 +58,80 @@ impl Buffer {
     pub fn new() -> Self {
         Self {
             content: vec![],
-            lines: vec![],
+            lines: vec![LineRange::new(0, 0)],
+            cursor: 0,
+            line: 0,
         }
     }
     pub fn from_str(content: &str) -> Self {
-        let (content, mut last_lb, mut line, mut lines) = (content.chars().collect::<Vec<char>>(), 0, 0, vec![]);
+        let (mut last_lb, mut cursor, mut line, mut lines, content) = (0, 0, 0, vec![LineRange::new(0, 0)], content.chars().collect::<Vec<char>>());
         for (i, c) in content.iter().enumerate() {
             if '\n' == *c {
                 lines[line] = LineRange::new(last_lb, i);
                 line += 1;
                 last_lb = i + 1;
-            }
-            if lines.len() == line {
-                lines.push(LineRange::new(last_lb, last_lb));
+                if lines.len() == line {
+                    lines.push(LineRange::new(last_lb, last_lb));
+                }
+                cursor = i + 1;
+                continue;
             }
             lines[line].end = i;
+            cursor = i + 1;
         }
-        Self { content, lines }
+        let line = lines.len() - 1;
+        Self { cursor, content, lines, line }
+    }
+    pub fn insert_at(&mut self, pos: usize, c: char) {
+        self.sync_line_with_cursor(pos);
+        match c {
+            '\n' => {
+                self.content.insert(self.cursor, c);
+                self.lines[self.line].end = self.cursor;
+                self.cursor += 1;
+                self.line += 1;
+                if self.lines.len() <= self.line {
+                    self.lines.insert(self.line, LineRange::new(self.cursor, self.cursor));
+                }
+            }
+            c => {
+                self.content.insert(self.cursor, c);
+                self.lines[self.line].end = self.cursor;
+                self.cursor += 1;
+            }
+        }
+    }
+    pub fn insert(&mut self, c: char) {
+        self.insert_at(self.cursor, c)
+    }
+    pub fn remove_at(&mut self, pos: usize) {
+        self.sync_line_with_cursor(pos);
+        match self.content[self.cursor] {
+            '\n' => {
+                self.content.remove(self.cursor);
+                self.lines[self.line].end -= 1;
+                if self.line + 1 < self.lines.len() {
+                    self.lines[self.line].end = self.lines[self.line + 1].end - 1;
+                    self.lines.remove(self.line + 1);
+                }
+            }
+            _ => {
+                self.content.remove(self.cursor);
+                self.lines[self.line].end -= 1;
+            }
+        }
+    }
+    pub fn remove(&mut self) {
+        self.remove_at(self.cursor - 1)
+    }
+    fn sync_line_with_cursor(&mut self, pos: usize) {
+        self.cursor = pos;
+        for (i, line) in self.lines.iter().enumerate() {
+            if line.end >= self.cursor {
+                self.line = i;
+                break;
+            }
+        }
     }
 }
 
@@ -79,20 +140,118 @@ mod test {
     use super::*;
 
     #[test]
-    fn new_buffer_from_str_with_one_line() {
+    fn test_should_create_buffer_from_str() {
         let buffer = Buffer::from_str("package main");
         assert_eq!(
-            "buffer [ content: 'package main', lines: '[(0, 11)]']",
+            "buffer [ cursor: 12, line: 0, content: 'package main', lines: '[(0, 11)]']",
             buffer.to_string(),
         );
     }
 
     #[test]
-    fn new_buffer_from_str_with_multiple_lines() {
+    fn test_should_create_from_str_with_multiple_lines() {
         let buffer = Buffer::from_str("package main\nfunc main() {\n}\n");
         assert_eq!(
-            "buffer [ content: 'package main\nfunc main() {\n}\n', lines: '[(0, 12), (13, 26), (27, 28), (29, 28)]']",
+            "buffer [ cursor: 29, line: 3, content: 'package main\nfunc main() {\n}\n', lines: '[(0, 12), (13, 26), (27, 28), (29, 29)]']",
             buffer.to_string(),
+        );
+    }
+
+    #[test]
+    fn test_should_insert_char_at_given_position() {
+        let mut buffer = Buffer::new();
+        assert_eq!(
+            "buffer [ cursor: 0, line: 0, content: '', lines: '[(0, 0)]']",
+            buffer.to_string()
+        );
+        buffer.insert_at(0, 'a');
+        assert_eq!(
+            "buffer [ cursor: 1, line: 0, content: 'a', lines: '[(0, 0)]']",
+            buffer.to_string()
+        );
+    }
+
+    #[test]
+    fn test_should_insert_char_at_cursor() {
+        let mut buffer = Buffer::new();
+        assert_eq!(
+            "buffer [ cursor: 0, line: 0, content: '', lines: '[(0, 0)]']",
+            buffer.to_string()
+        );
+        buffer.insert('\n');
+        assert_eq!(
+            "buffer [ cursor: 1, line: 1, content: '\n', lines: '[(0, 0), (1, 1)]']",
+            buffer.to_string()
+        );
+    }
+
+    #[test]
+    fn test_should_insert_new_line_at_given_position() {
+        let mut buffer = Buffer::new();
+        assert_eq!(
+            "buffer [ cursor: 0, line: 0, content: '', lines: '[(0, 0)]']",
+            buffer.to_string()
+        );
+        buffer.insert_at(0, '\n');
+        assert_eq!(
+            "buffer [ cursor: 1, line: 1, content: '\n', lines: '[(0, 0), (1, 1)]']",
+            buffer.to_string()
+        );
+    }
+
+    #[test]
+    fn test_should_remove_char_at_given_position() {
+        let mut buffer = Buffer::from_str("aa");
+        assert_eq!(
+            "buffer [ cursor: 2, line: 0, content: 'aa', lines: '[(0, 1)]']",
+            buffer.to_string()
+        );
+        buffer.remove_at(0);
+        assert_eq!(
+            "buffer [ cursor: 0, line: 0, content: 'a', lines: '[(0, 0)]']",
+            buffer.to_string()
+        );
+    }
+
+    #[test]
+    fn test_should_remove_char_before_cursor() {
+        let mut buffer = Buffer::from_str("aa");
+        assert_eq!(
+            "buffer [ cursor: 2, line: 0, content: 'aa', lines: '[(0, 1)]']",
+            buffer.to_string()
+        );
+        buffer.remove();
+        assert_eq!(
+            "buffer [ cursor: 1, line: 0, content: 'a', lines: '[(0, 0)]']",
+            buffer.to_string()
+        );
+    }
+
+    #[test]
+    fn test_should_remove_new_line_at_given_position() {
+        let mut buffer = Buffer::from_str("lorem\nipsum");
+        assert_eq!(
+            "buffer [ cursor: 11, line: 1, content: 'lorem\nipsum', lines: '[(0, 5), (6, 10)]']",
+            buffer.to_string()
+        );
+        buffer.remove_at(5);
+        assert_eq!(
+            "buffer [ cursor: 5, line: 0, content: 'loremipsum', lines: '[(0, 9)]']",
+            buffer.to_string()
+        );
+    }
+
+    #[test]
+    fn test_should_correctly_select_line_for_pos() {
+        let mut buffer = Buffer::from_str("lorem\nipsum");
+        assert_eq!(
+            "buffer [ cursor: 11, line: 1, content: 'lorem\nipsum', lines: '[(0, 5), (6, 10)]']",
+            buffer.to_string()
+        );
+        buffer.sync_line_with_cursor(0);
+        assert_eq!(
+            "buffer [ cursor: 0, line: 0, content: 'lorem\nipsum', lines: '[(0, 5), (6, 10)]']",
+            buffer.to_string()
         );
     }
 }
