@@ -1,3 +1,3 @@
-fn main() {
+mod buffer;
 
-}
+fn main() {}
