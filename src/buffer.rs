@@ -55,6 +55,27 @@ impl Debug for Buffer {
 }
 
 impl Buffer {
+    fn sync_line_with_cursor(&mut self, pos: usize) {
+        self.cursor = pos;
+        for (i, line) in self.lines.iter().enumerate() {
+            if line.end >= self.cursor {
+                self.line = i;
+                break;
+            }
+        }
+    }
+    fn insert_updates(&mut self) {
+        for line in self.line + 1..self.lines.len() {
+            self.lines[line].start += 1;
+            self.lines[line].end += 1;
+        }
+    }
+    fn remove_updates(&mut self) {
+        for line in self.line + 1..self.lines.len() {
+            self.lines[line].start -= 1;
+            self.lines[line].end -= 1;
+        }
+    }
     pub fn new() -> Self {
         Self {
             content: vec![],
@@ -93,6 +114,7 @@ impl Buffer {
                 if self.lines.len() <= self.line {
                     self.lines.insert(self.line, LineRange::new(self.cursor, self.cursor));
                 }
+                self.insert_updates()
             }
             c => {
                 self.content.insert(self.cursor, c);
@@ -113,11 +135,12 @@ impl Buffer {
                 self.lines[self.line].end -= 1;
                 if self.line + 1 < self.lines.len() {
                     self.lines[self.line].end = self.lines[self.line + 1].end - 1;
-                    if self.content.len() < self.lines[self.line + 1].end {
-                        self.lines[self.line].end = self.lines[self.line + 1].end - 2;
-                    }
                     self.lines.remove(self.line + 1);
+                    if self.line == self.lines.len() - 1 {
+                        self.lines[self.line].end -= 1;
+                    }
                 }
+                self.remove_updates();
             }
             _ => {
                 self.content.remove(self.cursor);
@@ -135,7 +158,6 @@ impl Buffer {
         if self.content.len() == 0 {
             return String::new();
         }
-
         let mut content = String::new();
         for line in &self.lines {
             if line.start == self.content.len() {
@@ -148,15 +170,6 @@ impl Buffer {
             content.push_str(&line_content)
         }
         content
-    }
-    fn sync_line_with_cursor(&mut self, pos: usize) {
-        self.cursor = pos;
-        for (i, line) in self.lines.iter().enumerate() {
-            if line.end >= self.cursor {
-                self.line = i;
-                break;
-            }
-        }
     }
 }
 
@@ -211,7 +224,7 @@ mod test {
     }
 
     #[test]
-    fn test_should_insert_new_line_at_given_position() {
+    fn test_should_insert_new_line() {
         let mut buffer = Buffer::new();
         assert_eq!(
             "buffer [ cursor: 0, line: 0, content: '', lines: '[(0, 0)]']",
@@ -220,6 +233,20 @@ mod test {
         buffer.insert_at(0, '\n');
         assert_eq!(
             "buffer [ cursor: 1, line: 1, content: '\n', lines: '[(0, 0), (1, 1)]']",
+            buffer.to_string()
+        );
+    }
+
+    #[test]
+    fn test_should_insert_new_line_at_given_position() {
+        let mut buffer = Buffer::from_str("aa");
+        assert_eq!(
+            "buffer [ cursor: 2, line: 0, content: 'aa', lines: '[(0, 1)]']",
+            buffer.to_string()
+        );
+        buffer.insert_at(1, '\n');
+        assert_eq!(
+            "buffer [ cursor: 2, line: 1, content: 'a\na', lines: '[(0, 1), (2, 2)]']",
             buffer.to_string()
         );
     }
@@ -254,14 +281,28 @@ mod test {
 
     #[test]
     fn test_should_remove_new_line_at_given_position() {
-        let mut buffer = Buffer::from_str("lorem\nipsum");
+        let mut buffer = Buffer::from_str("lorem\nipsum\ndolor");
         assert_eq!(
-            "buffer [ cursor: 11, line: 1, content: 'lorem\nipsum', lines: '[(0, 5), (6, 10)]']",
+            "buffer [ cursor: 17, line: 2, content: 'lorem\nipsum\ndolor', lines: '[(0, 5), (6, 11), (12, 16)]']",
             buffer.to_string()
         );
         buffer.remove_at(5);
         assert_eq!(
-            "buffer [ cursor: 5, line: 0, content: 'loremipsum', lines: '[(0, 9)]']",
+            "buffer [ cursor: 5, line: 0, content: 'loremipsum\ndolor', lines: '[(0, 10), (11, 15)]']",
+            buffer.to_string()
+        );
+    }
+
+    #[test]
+    fn test_should_remove_last_line() {
+        let mut buffer = Buffer::from_str("lorem\nipsum\ndolor\n");
+        assert_eq!(
+            "buffer [ cursor: 18, line: 3, content: 'lorem\nipsum\ndolor\n', lines: '[(0, 5), (6, 11), (12, 17), (18, 18)]']",
+            buffer.to_string()
+        );
+        buffer.remove_at(17);
+        assert_eq!(
+            "buffer [ cursor: 17, line: 2, content: 'lorem\nipsum\ndolor', lines: '[(0, 5), (6, 11), (12, 16)]']",
             buffer.to_string()
         );
     }
