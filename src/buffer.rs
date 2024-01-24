@@ -50,7 +50,13 @@ impl Display for Buffer {
 
 impl Debug for Buffer {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(self, f)
+        write!(
+            f,
+            "buffer [ cursor: {}, line: {}, lines: '{:?}']",
+            self.cursor,
+            self.line,
+            self.lines,
+        )
     }
 }
 
@@ -71,7 +77,15 @@ impl Buffer {
         }
     }
     fn remove_updates(&mut self) {
-        for line in self.line + 1..self.lines.len() {
+        for line in self.line..self.lines.len() {
+            let curr_line = &self.lines[line];
+            if self.line != self.lines.len() - 1 && curr_line.start == curr_line.end && self.cursor == curr_line.start {
+                continue
+            }
+            if line == self.line {
+                self.lines[line].end -= 1;
+                continue;
+            }
             self.lines[line].start -= 1;
             self.lines[line].end -= 1;
         }
@@ -132,15 +146,18 @@ impl Buffer {
         match self.content[self.cursor] {
             '\n' => {
                 self.content.remove(self.cursor);
-                self.lines[self.line].end -= 1;
-                if self.line + 1 < self.lines.len() {
-                    self.lines[self.line].end = self.lines[self.line + 1].end - 1;
-                    self.lines.remove(self.line + 1);
-                    if self.line == self.lines.len() - 1 {
-                        self.lines[self.line].end -= 1;
-                    }
-                }
                 self.remove_updates();
+                if self.line + 1 < self.lines.len() {
+                    if self.lines[self.line].end < self.lines[self.line + 1].end {
+                        self.lines[self.line].end = self.lines[self.line + 1].end;
+                    }
+                    if self.lines[self.line].end == self.cursor {
+                        if self.lines[self.line].end != 0 {
+                            self.lines[self.line].end -= 1;
+                        }
+                    }
+                    self.lines.remove(self.line + 1);
+                }
             }
             _ => {
                 self.content.remove(self.cursor);
@@ -323,7 +340,19 @@ mod test {
 
     #[test]
     fn test_should_return_correct_content() {
-        let buffer = Buffer::from_str("lorem\nipsum\n");
-        assert_eq!("lorem\r\nipsum\r\n", buffer.content());
+        let mut buffer = Buffer::from_str("la vida de albert\n\n");
+        assert_eq!("la vida de albert\r\n\r\n", buffer.content());
+        buffer.remove();
+        assert_eq!("la vida de albert\r\n", buffer.content());
+        buffer.remove();
+        assert_eq!("la vida de albert", buffer.content());
+    }
+
+    #[test]
+    fn test_should_remove_only_new_line() {
+        let mut buffer = Buffer::from_str("\n");
+        assert_eq!("\r\n", buffer.content());
+        buffer.remove();
+        assert_eq!("", buffer.content());
     }
 }

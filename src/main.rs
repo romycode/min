@@ -1,6 +1,7 @@
 use std::io::stdout;
 
 use crossterm::event;
+use crossterm::terminal::size;
 
 use crate::buffer::Buffer;
 use crate::term::Term;
@@ -12,18 +13,17 @@ mod cursor;
 fn main() {
     let stdout = stdout();
     let mut term = Term::new(&stdout);
-
     term.enable_raw();
-    term.clear();
-    term.flush();
 
     let mut buffer = Buffer::new();
-
     loop {
         term.clear();
+        term.move_cursor(0, size().unwrap().0 - 1);
+        term.print(&format!("{:?}", buffer));
         term.move_cursor(0, 0);
         term.print(&buffer.content());
         term.flush();
+
 
         if let Ok(event) = term.event() {
             match event {
